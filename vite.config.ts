@@ -13,6 +13,12 @@ const steamProxy = {
     changeOrigin: true,
     rewrite: (path: string) => path.replace(/^\/steam-api/, ''),
   },
+  // SteamSpy supplies community tags, review counts, and average playtime.
+  '/steamspy': {
+    target: 'https://steamspy.com',
+    changeOrigin: true,
+    rewrite: (path: string) => path.replace(/^\/steamspy/, ''),
+  },
 };
 
 export default defineConfig({

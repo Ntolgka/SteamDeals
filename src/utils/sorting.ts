@@ -1,8 +1,8 @@
-import type { SortMode, TrackedGameWithPrice } from '../types';
+import type { Filters, TrackedGameWithPrice } from '../types';
 
 /**
- * Effective current price in cents used for ordering.
- * Free games sort first (0); games without usable pricing sort last.
+ * Effective current price in cents used for ordering and the max-price
+ * filter. Free games sort first (0); games without usable pricing sort last.
  */
 function sortablePrice(game: TrackedGameWithPrice): number {
   const p = game.price;
@@ -24,34 +24,40 @@ function discountOf(game: TrackedGameWithPrice): number {
 
 export function filterAndSort(
   games: TrackedGameWithPrice[],
-  search: string,
-  sortMode: SortMode,
-  discountedOnly: boolean,
-  ownedOnly: boolean,
+  filters: Filters,
 ): TrackedGameWithPrice[] {
-  const query = search.trim().toLowerCase();
+  const query = filters.search.trim().toLowerCase();
 
   // The main view is the wishlist; owned games only appear under the Owned filter.
-  let list = games.filter((g) => (ownedOnly ? g.owned === true : !g.owned));
+  let list = games.filter((g) => (filters.ownedOnly ? g.owned === true : !g.owned));
 
   if (query) {
     list = list.filter((g) => g.name.toLowerCase().includes(query));
   }
-  if (discountedOnly) {
+  if (filters.discountedOnly) {
     list = list.filter((g) => g.price?.status === 'discounted');
+  }
+  if (filters.maxPriceUnits !== null) {
+    const maxCents = filters.maxPriceUnits * 100;
+    list = list.filter((g) => sortablePrice(g) <= maxCents);
+  }
+  if (filters.minDiscount > 0) {
+    list = list.filter((g) => discountOf(g) >= filters.minDiscount);
   }
 
   const byName = (a: TrackedGameWithPrice, b: TrackedGameWithPrice) =>
     a.name.localeCompare(b.name);
 
   return [...list].sort((a, b) => {
-    switch (sortMode) {
+    switch (filters.sortMode) {
       case 'price':
         return sortablePrice(a) - sortablePrice(b) || discountOf(b) - discountOf(a) || byName(a, b);
       case 'discount':
         return discountOf(b) - discountOf(a) || sortablePrice(a) - sortablePrice(b) || byName(a, b);
       case 'name':
         return byName(a, b);
+      case 'recent':
+        return (b.addedAt ?? 0) - (a.addedAt ?? 0) || byName(a, b);
     }
   });
 }

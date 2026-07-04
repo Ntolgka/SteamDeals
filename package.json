@@ -1,14 +1,15 @@
 {
   "name": "steamdeals",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "description": "Track current Steam discounts for your wishlist",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "add-game": "node scripts/add-game.mjs"
+    "add-game": "node scripts/add-game.mjs",
+    "stop": "kill $(lsof -ti :5173) 2>/dev/null || true"
   },
   "dependencies": {
     "react": "^18.3.1",

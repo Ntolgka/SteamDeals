@@ -1,38 +1,34 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Connect, Plugin } from 'vite';
+import {
+  completeEntry,
+  makeId,
+  mergeLows,
+  readLists,
+  readLows,
+  writeLists,
+  type GameList,
+} from './store';
+import { lookupHltb } from './hltb';
+import { fetchStoreTags } from './tags';
 
 /**
- * Tiny local API served by Vite (dev and preview) so the UI can add games to
- * data/games.json — the browser cannot write files itself.
+ * Local API served by Vite (dev and preview). The browser cannot write files
+ * or call cross-origin services with custom headers, so both live here.
  *
- *   GET    /local-api/games           → full tracked list
- *   POST   /local-api/games           → { name, appId } → appends a complete
- *                                       entry (steamUrl + headerImage derived
- *                                       from the appId), 409 on duplicates
- *   PATCH  /local-api/games/:appId    → { owned: boolean } → mark bought/owned
- *   DELETE /local-api/games/:appId    → remove the game from the list
+ *   GET    /local-api/state                       → { lists }
+ *   POST   /local-api/lists { name }              → new list
+ *   PATCH  /local-api/lists/:id { name }          → rename list
+ *   DELETE /local-api/lists/:id                   → remove list
+ *   POST   /local-api/lists/:id/games             → { name, appId } add game
+ *   POST   /local-api/lists/:id/games/bulk        → { names: string[], cc } resolve + add
+ *   PATCH  /local-api/lists/:id/games/:appId      → { owned: boolean }
+ *   DELETE /local-api/lists/:id/games/:appId      → remove game
+ *   GET    /local-api/lows?cc=tr                  → lowest observed prices
+ *   POST   /local-api/lows { cc, prices }         → merge observations
+ *   GET    /local-api/hltb?title=...              → HowLongToBeat lookup
+ *   GET    /local-api/tags?appid=...              → community tags (store page)
  */
-
-const GAMES_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'games.json');
-
-interface GameEntry {
-  name: string;
-  appId: number;
-  steamUrl: string;
-  headerImage: string;
-  owned?: boolean;
-}
-
-async function readGames(): Promise<GameEntry[]> {
-  return JSON.parse(await readFile(GAMES_PATH, 'utf8')) as GameEntry[];
-}
-
-async function writeGames(games: GameEntry[]): Promise<void> {
-  await writeFile(GAMES_PATH, `${JSON.stringify(games, null, 2)}\n`);
-}
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
@@ -55,22 +51,139 @@ function readBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+async function resolveSteamName(
+  name: string,
+  cc: string,
+): Promise<{ id: number; name: string } | null> {
+  const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(name)}&l=english&cc=${encodeURIComponent(cc || 'us')}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+  if (!res.ok) throw new Error(`Steam search HTTP ${res.status}`);
+  const json = (await res.json()) as { items?: Array<{ id: number; name: string; type?: string }> };
+  const top = (json.items ?? [])[0];
+  return top && typeof top.id === 'number' ? { id: top.id, name: top.name } : null;
+}
+
+const findList = (lists: GameList[], id: string) => lists.find((l) => l.id === id);
+
 const handle: Connect.NextHandleFunction = async (req, res, next) => {
   // The '/local-api' mount prefix is already stripped from req.url here.
-  const path = (req.url ?? '').split('?')[0];
-  const isGames = path === '/games';
-  const idMatch = path.match(/^\/games\/(\d+)$/);
+  const [path, query = ''] = (req.url ?? '').split('?');
+  const params = new URLSearchParams(query);
+  const method = req.method ?? 'GET';
+
   try {
-    if (idMatch && (req.method === 'PATCH' || req.method === 'DELETE')) {
-      const appId = Number(idMatch[1]);
-      const games = await readGames();
-      const index = games.findIndex((g) => g.appId === appId);
-      if (index < 0) {
-        return send(res, 404, { error: `No tracked game with appId ${appId}.` });
+    if (path === '/state' && method === 'GET') {
+      return send(res, 200, { lists: await readLists() });
+    }
+
+    if (path === '/lists' && method === 'POST') {
+      const body = (await readBody(req)) as { name?: unknown } | null;
+      const name = typeof body?.name === 'string' ? body.name.trim() : '';
+      if (!name) return send(res, 400, { error: 'Expected JSON body { name: string }.' });
+      const lists = await readLists();
+      if (lists.some((l) => l.name.toLowerCase() === name.toLowerCase())) {
+        return send(res, 409, { error: `A list named "${name}" already exists.` });
       }
-      if (req.method === 'DELETE') {
-        games.splice(index, 1);
-        await writeGames(games);
+      const list: GameList = { id: makeId(), name, createdAt: Date.now(), games: [] };
+      lists.push(list);
+      await writeLists(lists);
+      return send(res, 201, list);
+    }
+
+    const listMatch = path.match(/^\/lists\/([^/]+)$/);
+    if (listMatch && (method === 'PATCH' || method === 'DELETE')) {
+      const lists = await readLists();
+      const list = findList(lists, listMatch[1]);
+      if (!list) return send(res, 404, { error: 'List not found.' });
+      if (method === 'DELETE') {
+        if (lists.length === 1) {
+          return send(res, 400, { error: 'Cannot delete the last remaining list.' });
+        }
+        await writeLists(lists.filter((l) => l.id !== list.id));
+        return send(res, 200, { ok: true });
+      }
+      const body = (await readBody(req)) as { name?: unknown } | null;
+      const name = typeof body?.name === 'string' ? body.name.trim() : '';
+      if (!name) return send(res, 400, { error: 'Expected JSON body { name: string }.' });
+      list.name = name;
+      await writeLists(lists);
+      return send(res, 200, list);
+    }
+
+    const bulkMatch = path.match(/^\/lists\/([^/]+)\/games\/bulk$/);
+    if (bulkMatch && method === 'POST') {
+      const body = (await readBody(req)) as { names?: unknown; cc?: unknown } | null;
+      const names = Array.isArray(body?.names)
+        ? body.names.filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+        : [];
+      const cc = typeof body?.cc === 'string' ? body.cc : 'us';
+      if (names.length === 0) {
+        return send(res, 400, { error: 'Expected JSON body { names: string[] }.' });
+      }
+      if (names.length > 200) {
+        return send(res, 400, { error: 'Too many names in one import (max 200).' });
+      }
+      const lists = await readLists();
+      const list = findList(lists, bulkMatch[1]);
+      if (!list) return send(res, 404, { error: 'List not found.' });
+
+      const added: typeof list.games = [];
+      const failed: Array<{ name: string; reason: string }> = [];
+      for (const raw of names) {
+        const name = raw.trim();
+        try {
+          const hit = await resolveSteamName(name, cc);
+          if (!hit) {
+            failed.push({ name, reason: 'No Steam search result' });
+          } else if (list.games.some((g) => g.appId === hit.id)) {
+            failed.push({ name, reason: `Already in list as "${hit.name}"` });
+          } else {
+            const entry = completeEntry(hit.name, hit.id);
+            list.games.push(entry);
+            added.push(entry);
+          }
+        } catch (err) {
+          failed.push({ name, reason: err instanceof Error ? err.message : 'Lookup failed' });
+        }
+        // Be polite to Steam's search endpoint.
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      await writeLists(lists);
+      return send(res, 200, { added, failed });
+    }
+
+    const gamesMatch = path.match(/^\/lists\/([^/]+)\/games$/);
+    if (gamesMatch && method === 'POST') {
+      const body = (await readBody(req)) as { name?: unknown; appId?: unknown } | null;
+      const name = typeof body?.name === 'string' ? body.name.trim() : '';
+      const appId = Number(body?.appId);
+      if (!name || !Number.isInteger(appId) || appId <= 0) {
+        return send(res, 400, { error: 'Expected JSON body { name: string, appId: number }.' });
+      }
+      const lists = await readLists();
+      const list = findList(lists, gamesMatch[1]);
+      if (!list) return send(res, 404, { error: 'List not found.' });
+      if (list.games.some((g) => g.appId === appId)) {
+        return send(res, 409, { error: `"${name}" is already in this list.` });
+      }
+      const entry = completeEntry(name, appId);
+      list.games.push(entry);
+      await writeLists(lists);
+      return send(res, 201, entry);
+    }
+
+    const gameMatch = path.match(/^\/lists\/([^/]+)\/games\/(\d+)$/);
+    if (gameMatch && (method === 'PATCH' || method === 'DELETE')) {
+      const lists = await readLists();
+      const list = findList(lists, gameMatch[1]);
+      if (!list) return send(res, 404, { error: 'List not found.' });
+      const appId = Number(gameMatch[2]);
+      const index = list.games.findIndex((g) => g.appId === appId);
+      if (index < 0) return send(res, 404, { error: `No game with appId ${appId} in this list.` });
+
+      if (method === 'DELETE') {
+        list.games.splice(index, 1);
+        await writeLists(lists);
         return send(res, 200, { ok: true });
       }
       const body = (await readBody(req)) as { owned?: unknown } | null;
@@ -78,37 +191,44 @@ const handle: Connect.NextHandleFunction = async (req, res, next) => {
         return send(res, 400, { error: 'Expected JSON body { owned: boolean }.' });
       }
       if (body.owned) {
-        games[index].owned = true;
+        list.games[index].owned = true;
       } else {
-        delete games[index].owned; // keep the file clean for wishlist entries
+        delete list.games[index].owned;
       }
-      await writeGames(games);
-      return send(res, 200, games[index]);
+      await writeLists(lists);
+      return send(res, 200, list.games[index]);
     }
-    if (isGames && req.method === 'GET') {
-      return send(res, 200, await readGames());
+
+    if (path === '/lows' && method === 'GET') {
+      const cc = params.get('cc') ?? 'us';
+      const lows = await readLows();
+      return send(res, 200, lows[cc] ?? {});
     }
-    if (isGames && req.method === 'POST') {
-      const body = (await readBody(req)) as { name?: unknown; appId?: unknown } | null;
-      const name = typeof body?.name === 'string' ? body.name.trim() : '';
-      const appId = Number(body?.appId);
-      if (!name || !Number.isInteger(appId) || appId <= 0) {
-        return send(res, 400, { error: 'Expected JSON body { name: string, appId: number }.' });
+
+    if (path === '/lows' && method === 'POST') {
+      const body = (await readBody(req)) as { cc?: unknown; prices?: unknown } | null;
+      const cc = typeof body?.cc === 'string' && body.cc ? body.cc : null;
+      const prices = body?.prices as Record<string, { finalCents: number; currency: string }>;
+      if (!cc || typeof prices !== 'object' || prices === null) {
+        return send(res, 400, { error: 'Expected JSON body { cc: string, prices: object }.' });
       }
-      const games = await readGames();
-      if (games.some((g) => g.appId === appId)) {
-        return send(res, 409, { error: `"${name}" is already in your list.` });
-      }
-      const entry: GameEntry = {
-        name,
-        appId,
-        steamUrl: `https://store.steampowered.com/app/${appId}/`,
-        headerImage: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`,
-      };
-      games.push(entry);
-      await writeGames(games);
-      return send(res, 201, entry);
+      return send(res, 200, await mergeLows(cc, prices));
     }
+
+    if (path === '/tags' && method === 'GET') {
+      const appId = Number(params.get('appid'));
+      if (!Number.isInteger(appId) || appId <= 0) {
+        return send(res, 400, { error: 'Missing or invalid ?appid= parameter.' });
+      }
+      return send(res, 200, { tags: await fetchStoreTags(appId) });
+    }
+
+    if (path === '/hltb' && method === 'GET') {
+      const title = params.get('title')?.trim();
+      if (!title) return send(res, 400, { error: 'Missing ?title= parameter.' });
+      return send(res, 200, { result: await lookupHltb(title) });
+    }
+
     next();
   } catch (err) {
     send(res, 500, { error: err instanceof Error ? err.message : 'Internal error.' });

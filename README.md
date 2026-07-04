@@ -1,156 +1,128 @@
 # SteamDeals
 
-Track current Steam discounts for your wishlist. Keep a JSON list of Steam
-games, press **Refresh Deals**, and see live prices sorted with the cheapest
-games first — in a dark, Steam-inspired interface.
+Track current Steam discounts across your own game lists. Add games by name,
+paste in whole wishlists, filter by price and discount with Steam-style
+sliders, and see reviews, tags, playtime, and all-time-low prices — in a
+dark, Steam-inspired interface.
 
 ![Stack](https://img.shields.io/badge/stack-React%20%2B%20TypeScript%20%2B%20Vite-66c0f4)
 
 ## Features
 
+- **Launch like a real app** — double-click `SteamDeals.app` (macOS): it
+  starts the server if needed and opens the app in your browser. Pin it to
+  the Dock for one-click access.
+- **Multiple lists** — organize games into as many lists as you want
+  (tabs above the grid); create, rename, and delete lists freely. Existing
+  single-list files migrate automatically into a list named **HHH**.
 - **Add games from the UI** — type a name, pick from live Steam search
-  results, and the complete entry (App ID, store URL, header image) is saved
-  to `data/games.json` automatically and priced immediately
-- **Mark as bought / remove** — every card has a ✓ button that marks a game
-  as owned (it leaves the wishlist and lives under the **Owned** filter, and
-  can be moved back anytime) and a trash button that removes it from the
-  list entirely (with confirmation)
-- One-click **Refresh Deals** — fetches live prices for every tracked game
-- Sorted by lowest current price (free games first); also sort by highest
-  discount or alphabetically, plus a "Discounted only" filter and search
-- Summary bar: tracked games, number on discount, lowest price, last refresh
-- Steam-style cards with header art, discount badge, strikethrough original
-  price, and a direct "View on Steam" link
-- Graceful handling of delisted games, region restrictions, invalid app IDs,
-  and network failures — one broken game never breaks the page
-- Results cached in `localStorage`, so the app opens instantly with the last
-  known prices; caches older than 6 hours refresh automatically on launch
-- Summary bar with wishlist size, discount count, lowest price, total
-  savings, and a live-updating last-refresh time
-- Error boundary — an unexpected runtime error shows a recovery panel
-  instead of a blank page
+  results; the complete entry (App ID, store URL, header image) is saved
+  and priced immediately.
+- **Import a wishlist** — paste game names (one per line); every one is
+  resolved against Steam search and added to a list of your choice, or a
+  brand-new list, with a per-name failure report.
+- **Price & discount sliders** — cap the maximum price (1–10 in store
+  currency) and require a minimum discount (10–90%), Steam style.
+- **All-time lowest price** — every refresh records prices per region into
+  `data/lows.json`; cards show the lowest a game has been since you started
+  tracking, with an "At all-time low" badge when it's there right now.
+- **Reviews, tags, playtime** — Steam review percentage and count,
+  community tags (with a dedicated **RPGMAKER** badge for RPG Maker games),
+  and HowLongToBeat main-story hours (SteamSpy average as fallback).
+- **Region switcher** — the header dropdown changes the Steam storefront
+  (default: Turkey — MENA/USD). Price caches and lows are kept per region.
+- **Sorting** — lowest price (free first), highest discount, recently
+  added, alphabetical; plus "Discounted only" / "Owned" filters and search.
+- One-click **Refresh Deals**; results cached per region in `localStorage`
+  (instant startup, auto-refresh when older than 6 hours).
+- **Mark as bought / remove** — ✓ moves a game under the "Owned" filter
+  (reversible), 🗑 removes it (with confirmation).
+- Graceful degradation everywhere — a delisted game, a failed lookup, or a
+  blocked metadata service never breaks the page. Error boundary included.
 
 ## Requirements
 
 - [Node.js](https://nodejs.org) 18 or newer (ships with `npm`)
-
-## Installation
-
-```bash
-cd ~/Desktop/Dev/Projects/SteamDeals
-npm install
-```
+- macOS for the `.app` launcher (the web app itself runs anywhere)
 
 ## Running the app
 
-```bash
-npm run dev
-```
+**The easy way (macOS):** double-click **`SteamDeals.app`** in the project
+folder (or drag it to your Dock and click it there). It starts the server —
+installing dependencies automatically on the very first launch — and opens
+http://localhost:5173 in your default browser. Clicking it again while the
+server runs just opens the app. If macOS asks about Desktop folder access,
+allow it.
 
-Then open the printed URL (default **http://localhost:5173**).
-
-Production build, if you ever want one:
-
-```bash
-npm run build
-npm run preview   # serves the build on http://localhost:4173
-```
-
-> The Steam proxy is part of the Vite dev/preview server, so the app must be
-> served with `npm run dev` or `npm run preview` — opening `dist/index.html`
-> directly from disk will not be able to fetch prices.
-
-## Managing the game list — `data/games.json`
-
-All tracked games live in [`data/games.json`](data/games.json). Each entry:
-
-```json
-{
-  "name": "Portal 2",
-  "appId": 620,
-  "steamUrl": "https://store.steampowered.com/app/620/",
-  "headerImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/620/header.jpg",
-  "owned": true
-}
-```
-
-- `appId` is the number in the Steam store URL:
-  `store.steampowered.com/app/<appId>/...`
-- `headerImage` may be left as `""` — the app falls back to the standard Steam
-  CDN header (`.../steam/apps/<appId>/header.jpg`) automatically.
-- `owned` is optional: `true` moves the game out of the wishlist and under
-  the **Owned** filter. The ✓ button on each card toggles it for you.
-- The file ships with two **sample entries** (Portal 2, Hades) — delete them
-  freely.
-
-The dev server hot-reloads when the file changes; press **Refresh Deals** to
-fetch prices for newly added games.
-
-### Adding games by name
-
-**From the UI (easiest):** use the _"Add a game by name…"_ box at the top of
-the app. It searches Steam as you type; clicking a result writes a complete
-entry to `data/games.json` (via a small local API served by Vite — see
-`server/gamesApi.ts`) and fetches its price right away. Games already in
-your list are marked "Tracked ✓".
-
-**From the terminal:**
+**The terminal way:**
 
 ```bash
-npm run add-game -- "Hollow Knight" "Stardew Valley"
+cd ~/Desktop/Dev/Projects/SteamDeals
+npm install    # first time only
+npm run dev    # → http://localhost:5173
+npm run stop   # stops the server (or Ctrl-C in the terminal)
 ```
 
-The script queries Steam's store search, takes the top match, and appends a
-complete entry (name, appId, URL, header image) to `data/games.json`. It
-prints exactly what it matched so a wrong guess is easy to spot and correct.
+Production build: `npm run build && npm run preview` (serves on :4173).
 
-## How discounts are fetched
+> The Steam/SteamSpy proxies and the local list API are part of the Vite
+> server, so the app must be served with `npm run dev` or `npm run preview`
+> — opening `dist/index.html` from disk will not work.
 
-- Prices come from the public **Steam Store API**
-  (`store.steampowered.com/api/appdetails`). No API key is needed.
-- Steam does not allow cross-origin browser requests, so the Vite server
-  proxies `/steam-api/*` to `store.steampowered.com` (see `vite.config.ts`).
-- Requests are **batched** (up to 25 app IDs per call with
-  `filters=price_overview`) with a small concurrency limit, so even large
-  lists refresh in a handful of requests.
-- Games that return no price block are checked individually to distinguish
-  **free-to-play** titles from region-restricted or delisted ones.
-- Each refresh result is cached in `localStorage` and shown immediately on
-  the next launch.
+## Data files
 
-## Region / storefront
+- **`data/games.json`** — your lists. v2 format:
+  `{ "version": 2, "lists": [{ "id", "name", "createdAt", "games": [...] }] }`.
+  Each game: `name`, `appId`, `steamUrl`, `headerImage`, optional `owned`
+  and `addedAt`. Legacy v1 files (a plain array) are migrated automatically
+  into a single list named **HHH** — nothing is lost.
+- **`data/lows.json`** — lowest observed price per region per game,
+  maintained automatically. Delete it to reset tracking.
 
-Pricing is pinned to the **Turkey storefront** (`cc=tr`, Steam's USD "MENA"
-price sheet) via `STEAM_COUNTRY` in [`src/config.ts`](src/config.ts). Change
-it to any ISO country code, or set it to `''` to let Steam infer the region
-from your IP. The price cache is kept per-region, so switching never shows
-stale prices from another storefront.
+CLI alternative to the UI: `npm run add-game -- --list "HHH" "Hollow Knight"`.
+
+## Where the data comes from
+
+| Data | Source | Notes |
+| --- | --- | --- |
+| Prices & discounts | Steam Store API (`appdetails`, batched ×25) | region pinned via `cc`; ~200 req/5 min/IP limit |
+| Review % | Steam `appreviews` (official) | cached 3 days per game |
+| Tags / RPGMAKER | SteamSpy | cached 7 days; new/niche games may lag |
+| Playtime | HowLongToBeat (unofficial, server-side resolver) | cached 14 days; falls back to SteamSpy average |
+| All-time low | Tracked locally from your refreshes | only knows prices seen since you started using the app |
+| Name → App ID | Steam store search | top match; the UI shows exactly what matched |
 
 ## Known limitations
 
-- **Region-dependent prices** — prices/currency come from the storefront
-  configured in `src/config.ts` (Turkey/MENA by default). Steam must sell
-  the game in that region for a price to appear.
-- **Rate limiting** — the appdetails endpoint allows roughly 200 requests per
-  5 minutes per IP. Batching keeps usage tiny, but hammering the refresh
-  button can trigger HTTP 429; the app shows a clear message if that happens.
-- **Unofficial API** — appdetails is public but undocumented; Valve may
-  change its behavior at any time.
-- Bundles/packages are not resolved; only regular store apps are tracked.
+- **All-time lows are "since you started tracking"** — Steam publishes no
+  price history, and services like SteamDB have no public API. Lows build
+  up as you refresh (per region).
+- **HowLongToBeat is unofficial** — its internal endpoint rotates; the
+  resolver rediscovers it automatically, but if it changes shape the app
+  just shows no playtime until updated.
+- **SteamSpy data lags** for very new or very small games; tags may be
+  missing there.
+- Prices reflect the selected storefront; Steam must sell the game in that
+  region for a price to appear. Bundles/packages are not resolved.
 
 ## Project structure
 
 ```
 SteamDeals/
-├── data/games.json          # your tracked games (edit this)
-├── scripts/add-game.mjs     # CLI: resolves names → complete JSON entries
-├── server/gamesApi.ts       # local API so the UI can write games.json
+├── SteamDeals.app/          # macOS launcher (double-click to run)
+├── data/games.json          # your lists (v2; v1 migrates automatically)
+├── data/lows.json           # per-region all-time lows (auto-managed)
+├── scripts/add-game.mjs     # CLI: add games by name
+├── server/
+│   ├── gamesApi.ts          # local API: lists, games, bulk import, lows, HLTB
+│   ├── store.ts             # games.json/lows.json access + v1→v2 migration
+│   └── hltb.ts              # HowLongToBeat endpoint discovery + search
 ├── src/
-│   ├── components/          # Header, SummaryBar, Toolbar, GameCard, ...
-│   ├── hooks/useDeals.ts    # price state + refresh + cache hydration
-│   ├── services/steamApi.ts # batched Steam API access
-│   ├── services/cache.ts    # localStorage cache
-│   ├── utils/               # formatting + sort/filter logic
+│   ├── components/          # Header, ListTabs, Toolbar (sliders), ImportModal, GameCard, ...
+│   ├── hooks/               # useDeals (prices+lows), useEnrichment, useNow
+│   ├── services/            # steamApi, gamesApi, enrich (reviews/tags/HLTB), cache
+│   ├── utils/               # formatting + filter/sort logic
 │   └── styles/global.css    # Steam-inspired theme
-└──  vite.config.ts           # dev server + Steam proxy
+├── vite.config.ts           # dev server + Steam/SteamSpy proxies
+└── Claude/                  # Tasks.md, PROCESS.md (build log)
 ```

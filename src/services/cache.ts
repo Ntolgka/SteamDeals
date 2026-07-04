@@ -1,13 +1,9 @@
 import type { PriceMap } from '../types';
-import { STEAM_COUNTRY } from '../config';
 
 /**
- * localStorage cache so the UI shows the last known prices instantly on
- * startup. A refresh always overwrites it with fresh data. The key includes
- * the configured country so changing regions never shows stale prices.
+ * localStorage price cache, kept per storefront region so switching regions
+ * never shows another region's prices. A refresh always overwrites it.
  */
-
-const CACHE_KEY = `steamdeals.cache.v1.${STEAM_COUNTRY || 'auto'}`;
 
 interface CachePayload {
   version: 1;
@@ -15,9 +11,11 @@ interface CachePayload {
   prices: PriceMap;
 }
 
-export function loadCache(): { prices: PriceMap; updatedAt: number } | null {
+const key = (cc: string) => `steamdeals.cache.v1.${cc || 'auto'}`;
+
+export function loadCache(cc: string): { prices: PriceMap; updatedAt: number } | null {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(key(cc));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CachePayload;
     if (parsed?.version !== 1 || typeof parsed.updatedAt !== 'number' || !parsed.prices) {
@@ -29,10 +27,10 @@ export function loadCache(): { prices: PriceMap; updatedAt: number } | null {
   }
 }
 
-export function saveCache(prices: PriceMap, updatedAt: number): void {
+export function saveCache(cc: string, prices: PriceMap, updatedAt: number): void {
   try {
     const payload: CachePayload = { version: 1, updatedAt, prices };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
+    localStorage.setItem(key(cc), JSON.stringify(payload));
   } catch {
     // Quota/private-mode failures are non-fatal; the app just loses fast startup.
   }

@@ -1,5 +1,4 @@
 import type { GamePrice, PriceMap } from '../types';
-import { STEAM_COUNTRY } from '../config';
 
 /**
  * Steam Store API access.
@@ -20,7 +19,6 @@ const PROXY_BASE = '/steam-api';
 const BATCH_SIZE = 25;
 const DETAIL_CONCURRENCY = 4;
 const REQUEST_TIMEOUT_MS = 15_000;
-const CC_PARAM = STEAM_COUNTRY ? `&cc=${STEAM_COUNTRY}` : '';
 
 interface PriceOverview {
   currency: string;
@@ -37,7 +35,13 @@ interface BatchEntry {
 
 interface BasicEntry {
   success: boolean;
-  data?: { is_free?: boolean; type?: string } | unknown[];
+  data?:
+    | {
+        is_free?: boolean;
+        type?: string;
+        release_date?: { coming_soon?: boolean; date?: string };
+      }
+    | unknown[];
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -90,19 +94,20 @@ function priceFromOverview(appId: number, po: PriceOverview, now: number): GameP
 }
 
 /**
- * Fetch current prices for the given app ids.
+ * Fetch current prices for the given app ids on the given storefront (cc).
  * Never throws for individual games — every id gets an entry, with
  * status 'error'/'unavailable' when something went wrong for it.
  */
-export async function fetchPrices(appIds: number[]): Promise<PriceMap> {
+export async function fetchPrices(appIds: number[], cc: string): Promise<PriceMap> {
   const now = Date.now();
   const result: PriceMap = {};
   const needsDetailCheck: number[] = [];
+  const ccParam = cc ? `&cc=${encodeURIComponent(cc)}` : '';
 
   const batches = chunk(appIds, BATCH_SIZE);
   await runPool(
     batches.map((ids) => async () => {
-      const url = `${PROXY_BASE}/api/appdetails?appids=${ids.join(',')}&filters=price_overview${CC_PARAM}`;
+      const url = `${PROXY_BASE}/api/appdetails?appids=${ids.join(',')}&filters=price_overview${ccParam}`;
       try {
         const payload = await fetchJson<Record<string, BatchEntry>>(url);
         for (const id of ids) {
@@ -137,13 +142,20 @@ export async function fetchPrices(appIds: number[]): Promise<PriceMap> {
 
   await runPool(
     needsDetailCheck.map((id) => async () => {
-      const url = `${PROXY_BASE}/api/appdetails?appids=${id}&filters=basic${CC_PARAM}`;
+      const url = `${PROXY_BASE}/api/appdetails?appids=${id}&filters=basic,release_date${ccParam}`;
       try {
         const payload = await fetchJson<Record<string, BasicEntry>>(url);
         const entry = payload?.[String(id)];
         const data = entry?.success && !Array.isArray(entry.data) ? entry.data : undefined;
         if (data?.is_free) {
           result[id] = { appId: id, status: 'free', finalCents: 0, fetchedAt: now };
+        } else if (data?.release_date?.coming_soon) {
+          result[id] = {
+            appId: id,
+            status: 'unavailable',
+            message: `Coming soon${data.release_date.date ? ` — expected ${data.release_date.date}` : ''}, no price yet.`,
+            fetchedAt: now,
+          };
         } else {
           result[id] = {
             appId: id,
