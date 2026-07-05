@@ -55,9 +55,9 @@ if [ ! -x node_modules/.bin/vite ] || ! node_modules/.bin/vite --version >> "$LO
 fi
 
 # Start the dev server in its OWN session (setsid) so it keeps running after
-# this launcher — and the .app that spawned it — exits. A plain `nohup … &`
-# is not enough: when a LaunchServices app quits, macOS tears down its whole
-# process group, which would kill the server too.
+# this launcher exits. The applet wrapper (see Contents/Resources) checks in
+# with LaunchServices properly, so macOS does not garbage-collect the
+# processes we spawn here.
 nohup perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' npm run dev >> "$LOG" 2>&1 &
 
 # Wait for Vite to report its URL (it may pick another port if 5173 is busy).
