@@ -9,10 +9,10 @@ dark, Steam-inspired interface.
 
 ## Features
 
-- **Launch like a real app** — double-click `SteamDeals.app` (macOS): it
-  starts the server if needed and opens the app in your browser. Pin it to
-  the Dock for one-click access, and use the in-app **Quit** button to shut
-  everything down again — no terminal required for either.
+- **Launch like a real app** — double-click `SteamDeals.app` (macOS) or
+  `SteamDeals.bat` (Windows): it starts the server if needed and opens the
+  app in your browser. Use the in-app **Quit** button to shut everything
+  down again — no terminal required for either.
 - **Multiple lists** — organize games into as many lists as you want
   (tabs above the grid); create, rename, and delete lists freely.
 - **Add games from the UI** — type a name, pick from live Steam search
@@ -44,17 +44,23 @@ dark, Steam-inspired interface.
 ## Requirements
 
 - [Node.js](https://nodejs.org) 18 or newer (ships with `npm`)
-- macOS for the `.app` launcher (the web app itself runs anywhere)
 
 ## Running the app
 
-**The easy way (macOS):** double-click **`SteamDeals.app`** in the project
-folder (or drag it to your Dock and click it there). It starts the server —
-installing or repairing dependencies automatically when needed — and opens
+**macOS:** double-click **`SteamDeals.app`** in the project folder (or drag
+it to your Dock and click it there). It starts the server — installing or
+repairing dependencies automatically when needed — and opens
 http://localhost:5173 in your default browser. Clicking it again while the
 server runs just opens the app. If macOS asks about Desktop folder access,
-allow it. If anything goes wrong, `steamdeals-launcher.log` in the project
-folder has the details.
+allow it.
+
+**Windows:** double-click **`SteamDeals.bat`** in the project folder (right
+click → *Send to → Desktop* for a shortcut). Same behavior: installs or
+repairs dependencies when needed, starts the server in a minimized window,
+and opens the app in your default browser.
+
+If anything goes wrong on either platform, `steamdeals-launcher.log` in the
+project folder has the details.
 
 **Stopping:** press the **Quit** button in the app header (confirms, then
 shuts the server down), or run `npm run stop`.
@@ -117,6 +123,7 @@ CLI alternative to the UI: `npm run add-game -- --list "Wishlist" "Hollow Knight
 ```
 SteamDeals/
 ├── SteamDeals.app/          # macOS launcher (double-click to run)
+├── SteamDeals.bat           # Windows launcher (double-click to run)
 ├── data/                    # your lists + price lows (gitignored, auto-created)
 ├── scripts/add-game.mjs     # CLI: add games by name
 ├── server/

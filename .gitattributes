@@ -1,0 +1,8 @@
+# Normalize to LF by default
+* text=auto eol=lf
+
+# Batch files must keep CRLF line endings or cmd.exe misparses them
+*.bat text eol=crlf
+
+# Binary assets
+*.icns binary
