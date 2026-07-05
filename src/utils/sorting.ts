@@ -25,6 +25,8 @@ function discountOf(game: TrackedGameWithPrice): number {
 export function filterAndSort(
   games: TrackedGameWithPrice[],
   filters: Filters,
+  /** Playtime in hours for a game, or null when unknown (sorts last). */
+  playtimeOf: (appId: number) => number | null,
 ): TrackedGameWithPrice[] {
   const query = filters.search.trim().toLowerCase();
 
@@ -48,12 +50,24 @@ export function filterAndSort(
   const byName = (a: TrackedGameWithPrice, b: TrackedGameWithPrice) =>
     a.name.localeCompare(b.name);
 
+  // Descending playtime; games with unknown playtime sort last.
+  const playtimeSort = (a: TrackedGameWithPrice, b: TrackedGameWithPrice) => {
+    const pa = playtimeOf(a.appId);
+    const pb = playtimeOf(b.appId);
+    if (pa === null && pb === null) return 0;
+    if (pa === null) return 1;
+    if (pb === null) return -1;
+    return pb - pa;
+  };
+
   return [...list].sort((a, b) => {
     switch (filters.sortMode) {
       case 'price':
         return sortablePrice(a) - sortablePrice(b) || discountOf(b) - discountOf(a) || byName(a, b);
       case 'discount':
         return discountOf(b) - discountOf(a) || sortablePrice(a) - sortablePrice(b) || byName(a, b);
+      case 'playtime':
+        return playtimeSort(a, b) || byName(a, b);
       case 'name':
         return byName(a, b);
       case 'recent':

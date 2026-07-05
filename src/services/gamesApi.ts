@@ -80,6 +80,18 @@ export async function reportLows(
   return request('/local-api/lows', jsonInit('POST', { cc, prices }));
 }
 
+/**
+ * Ask the local server to shut down. The process exits right after replying,
+ * so a dropped connection is also a success — both resolve without throwing.
+ */
+export async function quitApp(): Promise<void> {
+  try {
+    await fetch('/local-api/quit', { method: 'POST' });
+  } catch {
+    // Connection reset because the server exited — that's the success path.
+  }
+}
+
 export async function searchSteam(term: string, signal?: AbortSignal): Promise<SteamSearchItem[]> {
   const cc = getCountry() || 'us';
   const url = `/steam-api/api/storesearch/?term=${encodeURIComponent(term)}&l=english&cc=${cc}`;

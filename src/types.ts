@@ -82,7 +82,7 @@ export interface TrackedGameWithPrice extends TrackedGame {
   price?: GamePrice;
 }
 
-export type SortMode = 'price' | 'discount' | 'name' | 'recent';
+export type SortMode = 'price' | 'discount' | 'playtime' | 'name' | 'recent';
 
 export interface Filters {
   search: string;

@@ -28,6 +28,7 @@ import { fetchStoreTags } from './tags';
  *   POST   /local-api/lows { cc, prices }         → merge observations
  *   GET    /local-api/hltb?title=...              → HowLongToBeat lookup
  *   GET    /local-api/tags?appid=...              → community tags (store page)
+ *   POST   /local-api/quit                        → stop the SteamDeals server
  */
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -213,6 +214,13 @@ const handle: Connect.NextHandleFunction = async (req, res, next) => {
         return send(res, 400, { error: 'Expected JSON body { cc: string, prices: object }.' });
       }
       return send(res, 200, await mergeLows(cc, prices));
+    }
+
+    if (path === '/quit' && method === 'POST') {
+      send(res, 200, { ok: true });
+      // Let the response flush, then stop the whole dev-server process.
+      setTimeout(() => process.exit(0), 250);
+      return;
     }
 
     if (path === '/tags' && method === 'GET') {

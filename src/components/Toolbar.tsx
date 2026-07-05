@@ -12,6 +12,7 @@ interface ToolbarProps {
 const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
   { value: 'price', label: 'Lowest price' },
   { value: 'discount', label: 'Highest discount' },
+  { value: 'playtime', label: 'Most playtime' },
   { value: 'recent', label: 'Recently added' },
   { value: 'name', label: 'A–Z' },
 ];

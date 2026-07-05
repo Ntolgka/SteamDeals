@@ -6,6 +6,7 @@ import {
   deleteGame,
   deleteList,
   loadState,
+  quitApp,
   renameList,
   setOwned,
 } from './services/gamesApi';
@@ -42,6 +43,7 @@ export default function App() {
   const [cc, setCc] = useState(getCountry());
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [showImport, setShowImport] = useState(false);
+  const [quit, setQuit] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
@@ -90,9 +92,18 @@ export default function App() {
   // Summary reflects the wishlist — owned games are no longer deals to hunt.
   const wishlistGames = useMemo(() => gamesWithPrices.filter((g) => !g.owned), [gamesWithPrices]);
 
+  // Playtime for sorting: HowLongToBeat main-story hours, else SteamSpy average.
+  const playtimeOf = useCallback(
+    (appId: number): number | null => {
+      const e = enrichment[appId];
+      return e?.hltb?.mainHours ?? e?.meta?.avgHours ?? null;
+    },
+    [enrichment],
+  );
+
   const visibleGames = useMemo(
-    () => filterAndSort(gamesWithPrices, filters),
-    [gamesWithPrices, filters],
+    () => filterAndSort(gamesWithPrices, filters, playtimeOf),
+    [gamesWithPrices, filters, playtimeOf],
   );
 
   const trackedIds = useMemo(() => new Set(activeGames.map((g) => g.appId)), [activeGames]);
@@ -163,8 +174,32 @@ export default function App() {
     });
   };
 
+  const handleQuit = async () => {
+    if (!window.confirm('Stop SteamDeals? The server will shut down and this tab will go offline.')) {
+      return;
+    }
+    setQuit(true);
+    await quitApp();
+  };
+
   const bannerError = actionError ?? listError ?? error;
   const showError = bannerError !== null && bannerError !== dismissedError;
+
+  if (quit) {
+    return (
+      <div className="quit-screen" role="status">
+        <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+          <path d="M12 2v10" />
+        </svg>
+        <h1>SteamDeals has stopped</h1>
+        <p>The server has been shut down. You can safely close this tab.</p>
+        <p className="quit-screen__hint">
+          To start it again, double-click <strong>SteamDeals</strong> or run <code>npm run dev</code>.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -174,6 +209,7 @@ export default function App() {
         cc={cc}
         onCcChange={handleCcChange}
         onRefresh={() => void refresh()}
+        onQuit={() => void handleQuit()}
       />
 
       {showError && (
