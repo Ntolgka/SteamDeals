@@ -11,10 +11,10 @@ dark, Steam-inspired interface.
 
 - **Launch like a real app** — double-click `SteamDeals.app` (macOS): it
   starts the server if needed and opens the app in your browser. Pin it to
-  the Dock for one-click access.
+  the Dock for one-click access, and use the in-app **Quit** button to shut
+  everything down again — no terminal required for either.
 - **Multiple lists** — organize games into as many lists as you want
-  (tabs above the grid); create, rename, and delete lists freely. Existing
-  single-list files migrate automatically into a list named **HHH**.
+  (tabs above the grid); create, rename, and delete lists freely.
 - **Add games from the UI** — type a name, pick from live Steam search
   results; the complete entry (App ID, store URL, header image) is saved
   and priced immediately.
@@ -31,8 +31,9 @@ dark, Steam-inspired interface.
   and HowLongToBeat main-story hours (SteamSpy average as fallback).
 - **Region switcher** — the header dropdown changes the Steam storefront
   (default: Turkey — MENA/USD). Price caches and lows are kept per region.
-- **Sorting** — lowest price (free first), highest discount, recently
-  added, alphabetical; plus "Discounted only" / "Owned" filters and search.
+- **Sorting** — lowest price (free first), highest discount, most playtime,
+  recently added, alphabetical; plus "Discounted only" / "Owned" filters
+  and search.
 - One-click **Refresh Deals**; results cached per region in `localStorage`
   (instant startup, auto-refresh when older than 6 hours).
 - **Mark as bought / remove** — ✓ moves a game under the "Owned" filter
@@ -49,15 +50,18 @@ dark, Steam-inspired interface.
 
 **The easy way (macOS):** double-click **`SteamDeals.app`** in the project
 folder (or drag it to your Dock and click it there). It starts the server —
-installing dependencies automatically on the very first launch — and opens
+installing or repairing dependencies automatically when needed — and opens
 http://localhost:5173 in your default browser. Clicking it again while the
 server runs just opens the app. If macOS asks about Desktop folder access,
-allow it.
+allow it. If anything goes wrong, `steamdeals-launcher.log` in the project
+folder has the details.
+
+**Stopping:** press the **Quit** button in the app header (confirms, then
+shuts the server down), or run `npm run stop`.
 
 **The terminal way:**
 
 ```bash
-cd ~/Desktop/Dev/Projects/SteamDeals
 npm install    # first time only
 npm run dev    # → http://localhost:5173
 npm run stop   # stops the server (or Ctrl-C in the terminal)
@@ -71,15 +75,18 @@ Production build: `npm run build && npm run preview` (serves on :4173).
 
 ## Data files
 
+The `data/` folder is **gitignored** (it's your personal library) and is
+created automatically on first run with one empty list.
+
 - **`data/games.json`** — your lists. v2 format:
   `{ "version": 2, "lists": [{ "id", "name", "createdAt", "games": [...] }] }`.
   Each game: `name`, `appId`, `steamUrl`, `headerImage`, optional `owned`
-  and `addedAt`. Legacy v1 files (a plain array) are migrated automatically
-  into a single list named **HHH** — nothing is lost.
+  and `addedAt`. Legacy v1 files (a plain array of games) are migrated
+  automatically into a single list — nothing is lost.
 - **`data/lows.json`** — lowest observed price per region per game,
   maintained automatically. Delete it to reset tracking.
 
-CLI alternative to the UI: `npm run add-game -- --list "HHH" "Hollow Knight"`.
+CLI alternative to the UI: `npm run add-game -- --list "Wishlist" "Hollow Knight"`.
 
 ## Where the data comes from
 
@@ -87,7 +94,7 @@ CLI alternative to the UI: `npm run add-game -- --list "HHH" "Hollow Knight"`.
 | --- | --- | --- |
 | Prices & discounts | Steam Store API (`appdetails`, batched ×25) | region pinned via `cc`; ~200 req/5 min/IP limit |
 | Review % | Steam `appreviews` (official) | cached 3 days per game |
-| Tags / RPGMAKER | SteamSpy | cached 7 days; new/niche games may lag |
+| Tags / RPGMAKER | Steam store page (age-gate aware) + SteamSpy | cached 7 days per game |
 | Playtime | HowLongToBeat (unofficial, server-side resolver) | cached 14 days; falls back to SteamSpy average |
 | All-time low | Tracked locally from your refreshes | only knows prices seen since you started using the app |
 | Name → App ID | Steam store search | top match; the UI shows exactly what matched |
@@ -100,8 +107,8 @@ CLI alternative to the UI: `npm run add-game -- --list "HHH" "Hollow Knight"`.
 - **HowLongToBeat is unofficial** — its internal endpoint rotates; the
   resolver rediscovers it automatically, but if it changes shape the app
   just shows no playtime until updated.
-- **SteamSpy data lags** for very new or very small games; tags may be
-  missing there.
+- **RPGMAKER detection is tag-based** — it appears only when the Steam
+  community actually tagged the game "RPGMaker"; there is no engine API.
 - Prices reflect the selected storefront; Steam must sell the game in that
   region for a price to appear. Bundles/packages are not resolved.
 
@@ -110,19 +117,18 @@ CLI alternative to the UI: `npm run add-game -- --list "HHH" "Hollow Knight"`.
 ```
 SteamDeals/
 ├── SteamDeals.app/          # macOS launcher (double-click to run)
-├── data/games.json          # your lists (v2; v1 migrates automatically)
-├── data/lows.json           # per-region all-time lows (auto-managed)
+├── data/                    # your lists + price lows (gitignored, auto-created)
 ├── scripts/add-game.mjs     # CLI: add games by name
 ├── server/
-│   ├── gamesApi.ts          # local API: lists, games, bulk import, lows, HLTB
+│   ├── gamesApi.ts          # local API: lists, games, bulk import, lows, quit
 │   ├── store.ts             # games.json/lows.json access + v1→v2 migration
-│   └── hltb.ts              # HowLongToBeat endpoint discovery + search
+│   ├── hltb.ts              # HowLongToBeat endpoint discovery + search
+│   └── tags.ts              # store-page community tag scraper
 ├── src/
 │   ├── components/          # Header, ListTabs, Toolbar (sliders), ImportModal, GameCard, ...
 │   ├── hooks/               # useDeals (prices+lows), useEnrichment, useNow
 │   ├── services/            # steamApi, gamesApi, enrich (reviews/tags/HLTB), cache
 │   ├── utils/               # formatting + filter/sort logic
 │   └── styles/global.css    # Steam-inspired theme
-├── vite.config.ts           # dev server + Steam/SteamSpy proxies
-└── Claude/                  # Tasks.md, PROCESS.md (build log)
+└── vite.config.ts           # dev server + Steam/SteamSpy proxies
 ```
