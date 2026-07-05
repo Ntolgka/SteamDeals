@@ -69,6 +69,40 @@ export async function deleteGame(listId: string, appId: number): Promise<void> {
   await request(`/local-api/lists/${listId}/games/${appId}`, { method: 'DELETE' });
 }
 
+export async function moveGame(
+  fromListId: string,
+  appId: number,
+  toListId: string,
+): Promise<TrackedGame> {
+  return request(
+    `/local-api/lists/${fromListId}/games/${appId}/move`,
+    jsonInit('POST', { toListId }),
+  );
+}
+
+export interface WishlistFetchResult {
+  steamId: string;
+  items: Array<{ appid: number; dateAdded: number | null }>;
+}
+
+export async function fetchSteamWishlist(input: string): Promise<WishlistFetchResult> {
+  return request(`/local-api/steam-wishlist?input=${encodeURIComponent(input)}`);
+}
+
+export async function bulkImportAppIds(
+  listId: string,
+  items: Array<{ appid: number; dateAdded: number | null }>,
+): Promise<BulkImportResult> {
+  return request(
+    `/local-api/lists/${listId}/games/bulk-appids`,
+    jsonInit('POST', { items, cc: getCountry() }),
+  );
+}
+
+export async function importBackup(backup: unknown): Promise<{ ok: boolean; lists: number }> {
+  return request('/local-api/import', jsonInit('POST', backup));
+}
+
 export async function loadLows(cc: string): Promise<LowsMap> {
   return request(`/local-api/lows?cc=${encodeURIComponent(cc)}`);
 }

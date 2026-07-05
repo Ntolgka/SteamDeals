@@ -588,6 +588,55 @@ body {
   border-color: var(--danger);
 }
 
+.card__menu {
+  position: relative;
+}
+
+.card__menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 15;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: #1a2634;
+  border: 1px solid rgba(103, 193, 245, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+  padding: 5px;
+}
+
+.card__menu-label {
+  display: block;
+  padding: 5px 10px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+}
+
+.card__menu-pop button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card__menu-pop button:hover {
+  background: rgba(102, 192, 244, 0.16);
+  color: var(--accent);
+}
+
 .card__ribbon {
   position: absolute;
   top: 10px;
@@ -1103,6 +1152,61 @@ body {
   font-size: 13px;
   color: var(--text-dim);
   line-height: 1.5;
+}
+
+.modal__hint--progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+}
+
+.modal__tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+
+.modal__tab {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.modal__tab:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.modal__tab.is-active {
+  background: rgba(102, 192, 244, 0.16);
+  color: var(--accent);
+}
+
+.modal__input-wide {
+  width: 100%;
+  padding: 11px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+
+.modal__input-wide:focus {
+  border-color: var(--accent);
 }
 
 .modal__textarea {

@@ -18,9 +18,12 @@ dark, Steam-inspired interface.
 - **Add games from the UI** — type a name, pick from live Steam search
   results; the complete entry (App ID, store URL, header image) is saved
   and priced immediately.
-- **Import a wishlist** — paste game names (one per line); every one is
-  resolved against Steam search and added to a list of your choice, or a
-  brand-new list, with a per-name failure report.
+- **Import games in bulk** — paste game names (one per line), *or* import a
+  public Steam wishlist by profile URL. Either way they're resolved to
+  complete entries and added to a list of your choice (or a new one), with a
+  per-item report of anything skipped.
+- **Move games between lists** and **back up / restore** your whole library
+  to a JSON file (your `data/` folder isn't in git, so this is your backup).
 - **Price & discount sliders** — cap the maximum price (1–10 in store
   currency) and require a minimum discount (10–90%), Steam style.
 - **All-time lowest price** — every refresh records prices per region into
@@ -43,7 +46,8 @@ dark, Steam-inspired interface.
 
 ## Requirements
 
-- [Node.js](https://nodejs.org) 18 or newer (ships with `npm`)
+- [Node.js](https://nodejs.org) 20 or newer recommended (18 still works; the
+  macOS launcher automatically prefers a Homebrew `node@22` if one is present)
 
 ## Running the app
 
@@ -99,6 +103,7 @@ CLI alternative to the UI: `npm run add-game -- --list "Wishlist" "Hollow Knight
 | Data | Source | Notes |
 | --- | --- | --- |
 | Prices & discounts | Steam Store API (`appdetails`, batched ×25) | region pinned via `cc`; ~200 req/5 min/IP limit |
+| Steam wishlist | keyless `IWishlistService/GetWishlist` (+ vanity resolve) | the profile's "Game details" privacy must be Public |
 | Review % | Steam `appreviews` (official) | cached 3 days per game |
 | Tags / RPGMAKER | Steam store page (age-gate aware) + SteamSpy | cached 7 days per game |
 | Playtime | HowLongToBeat (unofficial, server-side resolver) | cached 14 days; falls back to SteamSpy average |
@@ -118,6 +123,19 @@ CLI alternative to the UI: `npm run add-game -- --list "Wishlist" "Hollow Knight
 - Prices reflect the selected storefront; Steam must sell the game in that
   region for a price to appear. Bundles/packages are not resolved.
 
+### iCloud / cloud-synced folders
+
+If the project lives in an iCloud-synced location (e.g. Desktop with Desktop
+& Documents sync on), iCloud will try to sync the tens of thousands of files
+in `node_modules` and can corrupt them — the symptom is the app repeatedly
+"installing dependencies." The macOS launcher works around this: after
+installing, it moves dependencies to a `node_modules.nosync` folder (which
+macOS excludes from sync) and symlinks `node_modules` to it. To do it by hand:
+
+```bash
+mv node_modules node_modules.nosync && ln -s node_modules.nosync node_modules
+```
+
 ## Project structure
 
 ```
@@ -127,10 +145,11 @@ SteamDeals/
 ├── data/                    # your lists + price lows (gitignored, auto-created)
 ├── scripts/add-game.mjs     # CLI: add games by name
 ├── server/
-│   ├── gamesApi.ts          # local API: lists, games, bulk import, lows, quit
+│   ├── gamesApi.ts          # local API: lists, games, move, import, export, lows, quit
 │   ├── store.ts             # games.json/lows.json access + v1→v2 migration
 │   ├── hltb.ts              # HowLongToBeat endpoint discovery + search
-│   └── tags.ts              # store-page community tag scraper
+│   ├── tags.ts              # store-page community tag scraper
+│   └── wishlist.ts          # Steam wishlist + vanity-name resolution
 ├── src/
 │   ├── components/          # Header, ListTabs, Toolbar (sliders), ImportModal, GameCard, ...
 │   ├── hooks/               # useDeals (prices+lows), useEnrichment, useNow

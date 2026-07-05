@@ -7,10 +7,13 @@ import {
   readLists,
   readLows,
   writeLists,
+  writeLows,
   type GameList,
+  type LowsFile,
 } from './store';
 import { lookupHltb } from './hltb';
 import { fetchStoreTags } from './tags';
+import { fetchWishlist, resolveSteamId } from './wishlist';
 
 /**
  * Local API served by Vite (dev and preview). The browser cannot write files
@@ -28,6 +31,11 @@ import { fetchStoreTags } from './tags';
  *   POST   /local-api/lows { cc, prices }         → merge observations
  *   GET    /local-api/hltb?title=...              → HowLongToBeat lookup
  *   GET    /local-api/tags?appid=...              → community tags (store page)
+ *   POST   /local-api/lists/:id/games/:appId/move → { toListId } move game
+ *   GET    /local-api/steam-wishlist?input=...    → wishlist appids for a profile
+ *   POST   /local-api/lists/:id/games/bulk-appids → { items:[{appid,dateAdded}] }
+ *   GET    /local-api/export                      → download full data backup
+ *   POST   /local-api/import                      → restore a backup (overwrites)
  *   POST   /local-api/quit                        → stop the SteamDeals server
  */
 
@@ -171,6 +179,148 @@ const handle: Connect.NextHandleFunction = async (req, res, next) => {
       list.games.push(entry);
       await writeLists(lists);
       return send(res, 201, entry);
+    }
+
+    const moveMatch = path.match(/^\/lists\/([^/]+)\/games\/(\d+)\/move$/);
+    if (moveMatch && method === 'POST') {
+      const body = (await readBody(req)) as { toListId?: unknown } | null;
+      const toListId = typeof body?.toListId === 'string' ? body.toListId : '';
+      if (!toListId) return send(res, 400, { error: 'Expected JSON body { toListId: string }.' });
+      const lists = await readLists();
+      const from = findList(lists, moveMatch[1]);
+      const to = findList(lists, toListId);
+      if (!from || !to) return send(res, 404, { error: 'List not found.' });
+      if (from.id === to.id) return send(res, 400, { error: 'Source and target list are the same.' });
+      const appId = Number(moveMatch[2]);
+      const index = from.games.findIndex((g) => g.appId === appId);
+      if (index < 0) return send(res, 404, { error: `No game with appId ${appId} in this list.` });
+      if (to.games.some((g) => g.appId === appId)) {
+        return send(res, 409, { error: `"${from.games[index].name}" is already in "${to.name}".` });
+      }
+      // Move the entry as-is: owned state and addedAt are preserved.
+      const [entry] = from.games.splice(index, 1);
+      to.games.push(entry);
+      await writeLists(lists);
+      return send(res, 200, entry);
+    }
+
+    const bulkIdsMatch = path.match(/^\/lists\/([^/]+)\/games\/bulk-appids$/);
+    if (bulkIdsMatch && method === 'POST') {
+      const body = (await readBody(req)) as { items?: unknown; cc?: unknown } | null;
+      const items = Array.isArray(body?.items)
+        ? (body.items as Array<{ appid?: unknown; dateAdded?: unknown }>).filter(
+            (it) => Number.isInteger(Number(it?.appid)) && Number(it.appid) > 0,
+          )
+        : [];
+      const cc = typeof body?.cc === 'string' && body.cc ? body.cc : 'us';
+      if (items.length === 0) {
+        return send(res, 400, { error: 'Expected JSON body { items: [{ appid }] }.' });
+      }
+      const lists = await readLists();
+      const list = findList(lists, bulkIdsMatch[1]);
+      if (!list) return send(res, 404, { error: 'List not found.' });
+
+      // Stay well inside Steam's appdetails rate budget (~200 req / 5 min).
+      const CAP = 150;
+      const capped = items.slice(0, CAP);
+      const added: typeof list.games = [];
+      const failed: Array<{ name: string; reason: string }> = [];
+      for (const it of capped) {
+        const appid = Number(it.appid);
+        if (list.games.some((g) => g.appId === appid)) {
+          failed.push({ name: `appid ${appid}`, reason: 'Already in list' });
+          continue;
+        }
+        try {
+          const url = `https://store.steampowered.com/api/appdetails?appids=${appid}&filters=basic&cc=${encodeURIComponent(cc)}`;
+          const r = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const json = (await r.json()) as Record<
+            string,
+            { success: boolean; data?: { name?: string } | unknown[] }
+          >;
+          const entryData = json[String(appid)];
+          const name =
+            entryData?.success && entryData.data && !Array.isArray(entryData.data)
+              ? entryData.data.name?.trim()
+              : undefined;
+          if (!name) {
+            failed.push({ name: `appid ${appid}`, reason: 'Not available on Steam' });
+          } else {
+            const dateAdded = Number(it.dateAdded);
+            const entry = completeEntry(name, appid, {
+              // Keep the original wishlist date so "Recently added" reflects it.
+              addedAt: Number.isFinite(dateAdded) && dateAdded > 0 ? dateAdded * 1000 : Date.now(),
+            });
+            list.games.push(entry);
+            added.push(entry);
+          }
+        } catch (err) {
+          failed.push({
+            name: `appid ${appid}`,
+            reason: err instanceof Error ? err.message : 'Lookup failed',
+          });
+        }
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      if (items.length > CAP) {
+        failed.push({
+          name: `${items.length - CAP} more item(s)`,
+          reason: `Import capped at ${CAP} per run — run the import again for the rest`,
+        });
+      }
+      await writeLists(lists);
+      return send(res, 200, { added, failed });
+    }
+
+    if (path === '/steam-wishlist' && method === 'GET') {
+      const input = params.get('input')?.trim();
+      if (!input) return send(res, 400, { error: 'Missing ?input= parameter.' });
+      const steamId = await resolveSteamId(input);
+      const items = await fetchWishlist(steamId);
+      return send(res, 200, { steamId, items });
+    }
+
+    if (path === '/export' && method === 'GET') {
+      const [lists, lows] = await Promise.all([readLists(), readLows()]);
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="steamdeals-backup-${stamp}.json"`,
+      );
+      res.end(
+        JSON.stringify({ steamdealsBackup: 1, exportedAt: Date.now(), lists, lows }, null, 2),
+      );
+      return;
+    }
+
+    if (path === '/import' && method === 'POST') {
+      const body = (await readBody(req)) as {
+        steamdealsBackup?: unknown;
+        lists?: unknown;
+        lows?: unknown;
+      } | null;
+      if (body?.steamdealsBackup !== 1 || !Array.isArray(body.lists)) {
+        return send(res, 400, { error: 'Not a valid SteamDeals backup file.' });
+      }
+      const lists = body.lists as GameList[];
+      const valid =
+        lists.length > 0 &&
+        lists.every(
+          (l) =>
+            typeof l?.id === 'string' &&
+            typeof l?.name === 'string' &&
+            Array.isArray(l?.games) &&
+            l.games.every((g) => typeof g?.name === 'string' && Number.isInteger(g?.appId)),
+        );
+      if (!valid) return send(res, 400, { error: 'Backup file contains invalid list data.' });
+      await writeLists(lists);
+      if (body.lows && typeof body.lows === 'object') {
+        await writeLows(body.lows as LowsFile);
+      }
+      return send(res, 200, { ok: true, lists: lists.length });
     }
 
     const gameMatch = path.match(/^\/lists\/([^/]+)\/games\/(\d+)$/);

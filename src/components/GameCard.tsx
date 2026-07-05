@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { GameEnrichment, LowRecord, TrackedGameWithPrice } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import type { GameEnrichment, GameList, LowRecord, TrackedGameWithPrice } from '../types';
 import { headerImageUrl } from '../services/steamApi';
 import { formatPrice, formatRelativeTime } from '../utils/format';
 import { useNow } from '../hooks/useNow';
@@ -9,8 +9,11 @@ interface GameCardProps {
   loading: boolean;
   low?: LowRecord;
   enrichment?: GameEnrichment;
+  /** Other lists this game can be moved to (excludes the current one). */
+  moveTargets: GameList[];
   onToggleOwned: (game: TrackedGameWithPrice) => void;
   onDelete: (game: TrackedGameWithPrice) => void;
+  onMove: (game: TrackedGameWithPrice, toListId: string) => void;
 }
 
 function PriceBlock({ game, loading }: Pick<GameCardProps, 'game' | 'loading'>) {
@@ -128,11 +131,31 @@ function MetaRow({ game, low, enrichment }: Pick<GameCardProps, 'game' | 'low' |
   );
 }
 
-export function GameCard({ game, loading, low, enrichment, onToggleOwned, onDelete }: GameCardProps) {
+export function GameCard({
+  game,
+  loading,
+  low,
+  enrichment,
+  moveTargets,
+  onToggleOwned,
+  onDelete,
+  onMove,
+}: GameCardProps) {
   useNow(); // keep "Updated X ago" ticking
   const [imageFailed, setImageFailed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const imageSrc = game.headerImage || headerImageUrl(game.appId);
   const meta = enrichment?.meta;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [menuOpen]);
 
   return (
     <article className={`card${loading && !game.price ? ' card--loading' : ''}`}>
@@ -153,6 +176,39 @@ export function GameCard({ game, loading, low, enrichment, onToggleOwned, onDele
           <span className="card__ribbon">-{game.price.discountPercent}%</span>
         )}
         <div className="card__actions">
+          {moveTargets.length > 0 && (
+            <div className="card__menu" ref={menuRef}>
+              <button
+                className="card__action"
+                title="Move to another list"
+                aria-label={`Move ${game.name} to another list`}
+                aria-haspopup="true"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((o) => !o)}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 9l4-4 4 4M9 5v10a4 4 0 0 0 4 4h6M15 15l4 4-4 4" transform="translate(0 -4)" />
+                </svg>
+              </button>
+              {menuOpen && (
+                <div className="card__menu-pop" role="menu">
+                  <span className="card__menu-label">Move to…</span>
+                  {moveTargets.map((l) => (
+                    <button
+                      key={l.id}
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onMove(game, l.id);
+                      }}
+                    >
+                      {l.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button
             className={`card__action${game.owned ? ' card__action--owned' : ''}`}
             title={game.owned ? 'Owned — click to move back to the wishlist' : 'Mark as bought'}

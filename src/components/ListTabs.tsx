@@ -7,9 +7,20 @@ interface ListTabsProps {
   onCreate: () => void;
   onRename: () => void;
   onDelete: () => void;
+  onExport: () => void;
+  onImportBackup: () => void;
 }
 
-export function ListTabs({ lists, activeListId, onSelect, onCreate, onRename, onDelete }: ListTabsProps) {
+export function ListTabs({
+  lists,
+  activeListId,
+  onSelect,
+  onCreate,
+  onRename,
+  onDelete,
+  onExport,
+  onImportBackup,
+}: ListTabsProps) {
   return (
     <nav className="list-tabs" aria-label="Game lists">
       {lists.map((list) => (
@@ -36,6 +47,12 @@ export function ListTabs({ lists, activeListId, onSelect, onCreate, onRename, on
         disabled={lists.length <= 1}
       >
         Delete list
+      </button>
+      <button className="list-tabs__action" title="Download a backup of all your lists" onClick={onExport}>
+        ⭳ Backup
+      </button>
+      <button className="list-tabs__action" title="Restore lists from a backup file" onClick={onImportBackup}>
+        Restore
       </button>
     </nav>
   );

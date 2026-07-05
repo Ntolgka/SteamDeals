@@ -5,7 +5,9 @@ import {
   createList,
   deleteGame,
   deleteList,
+  importBackup,
   loadState,
+  moveGame,
   quitApp,
   renameList,
   setOwned,
@@ -174,6 +176,58 @@ export default function App() {
     });
   };
 
+  const handleMove = (game: TrackedGameWithPrice, toListId: string) => {
+    if (!activeList) return;
+    void guard(async () => {
+      await moveGame(activeList.id, game.appId, toListId);
+      await reloadState();
+    });
+  };
+
+  const moveTargets = useMemo(
+    () => (lists ?? []).filter((l) => l.id !== activeList?.id),
+    [lists, activeList],
+  );
+
+  const handleExport = () => {
+    // Streamed straight from the server as a download.
+    window.location.href = '/local-api/export';
+  };
+
+  const handleImportBackup = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(String(reader.result));
+        } catch {
+          setActionError('That file is not valid JSON.');
+          return;
+        }
+        if (
+          !window.confirm(
+            'Restore this backup? It replaces all current lists and price-low history.',
+          )
+        ) {
+          return;
+        }
+        void guard(async () => {
+          await importBackup(parsed);
+          await reloadState();
+          window.location.reload();
+        });
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
   const handleQuit = async () => {
     if (!window.confirm('Stop SteamDeals? The server will shut down and this tab will go offline.')) {
       return;
@@ -231,6 +285,8 @@ export default function App() {
             onCreate={handleCreateList}
             onRename={handleRenameList}
             onDelete={handleDeleteList}
+            onExport={handleExport}
+            onImportBackup={handleImportBackup}
           />
         </>
       )}
@@ -257,8 +313,10 @@ export default function App() {
             ownedView={filters.ownedOnly}
             lows={lows}
             enrichment={enrichment}
+            moveTargets={moveTargets}
             onToggleOwned={handleToggleOwned}
             onDelete={handleDelete}
+            onMove={handleMove}
           />
         </>
       )}

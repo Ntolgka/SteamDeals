@@ -1,4 +1,4 @@
-import type { GameEnrichment, LowsMap, TrackedGameWithPrice } from '../types';
+import type { GameEnrichment, GameList, LowsMap, TrackedGameWithPrice } from '../types';
 import { GameCard } from './GameCard';
 
 interface GameGridProps {
@@ -7,8 +7,10 @@ interface GameGridProps {
   ownedView: boolean;
   lows: LowsMap;
   enrichment: Record<number, GameEnrichment>;
+  moveTargets: GameList[];
   onToggleOwned: (game: TrackedGameWithPrice) => void;
   onDelete: (game: TrackedGameWithPrice) => void;
+  onMove: (game: TrackedGameWithPrice, toListId: string) => void;
 }
 
 export function GameGrid({
@@ -17,8 +19,10 @@ export function GameGrid({
   ownedView,
   lows,
   enrichment,
+  moveTargets,
   onToggleOwned,
   onDelete,
+  onMove,
 }: GameGridProps) {
   if (games.length === 0) {
     return (
@@ -41,8 +45,10 @@ export function GameGrid({
           loading={loading}
           low={lows[String(game.appId)]}
           enrichment={enrichment[game.appId]}
+          moveTargets={moveTargets}
           onToggleOwned={onToggleOwned}
           onDelete={onDelete}
+          onMove={onMove}
         />
       ))}
     </div>

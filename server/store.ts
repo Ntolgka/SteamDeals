@@ -111,6 +111,11 @@ export async function writeLists(lists: GameList[]): Promise<void> {
   await writeFile(GAMES_PATH, `${JSON.stringify(file, null, 2)}\n`);
 }
 
+export async function writeLows(lows: LowsFile): Promise<void> {
+  await mkdir(DATA_DIR, { recursive: true });
+  await writeFile(LOWS_PATH, `${JSON.stringify(lows, null, 2)}\n`);
+}
+
 export async function readLows(): Promise<LowsFile> {
   try {
     return JSON.parse(await readFile(LOWS_PATH, 'utf8')) as LowsFile;
